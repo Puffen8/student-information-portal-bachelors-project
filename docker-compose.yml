@@ -15,31 +15,61 @@ x-common-config: &common-config
 
 services:
   web:
-    container_name: fed-backend
-    command: python fad_backend/manage.py runserver 0.0.0.0:8000
+    container_name: fad-backend
+    command: >
+      sh -c "
+        python fad_backend/manage.py migrate &&
+        python fad_backend/manage.py initportal &&
+        python fad_backend/manage.py runserver 0.0.0.0:8000
+      "
     ports:
       - "8000:8000"
+      - "587:587"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://0.0.0.0:8000/swagger.json"]
+      interval: 5s
+      retries: 5
+      timeout: 5s
     <<: *common-config
-    
+  
+  frontend:
+    container_name: fad-frontend
+    command: >
+      sh -c "npm install swagger-typescript-api && npx swagger-typescript-api generate -p http://web:8000/swagger.json -o src/api && npm run dev"
+    build:
+      context: ./fad_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      web:
+        condition: service_healthy
+
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./fad_frontend:/fad_frontend
+      - node_modules:/fad_frontend/node_modules
+
+
 
   migrate:    
-    container_name: fed-migrate
-    command: python fad_backend/manage.py migrate  # Run migrations
+    container_name: fad-migrate
+    command: python fad_backend/manage.py migrate  # Run migrations python manage.py migrate
     profiles:
       - migration
     <<: *common-config
     
 
   make_migrations:
-      container_name: make_migrations_fed
-      command: python fad_backend/manage.py makemigrations 
+      container_name: make_migrations_fad
+      command: python fad_backend/manage.py makemigrations  
       profiles:
         - make_migrations
       <<: *common-config
   
 
   add_app:
-    container_name: make_migrations_fed
+    container_name: make_migrations_fad
     working_dir: /app/fad_backend
     command: python manage.py startapp demo
     profiles:
@@ -55,15 +85,18 @@ services:
       - tests
     <<: *common-config
     
-        
+  
+    
   db:
-    image: postgres:15  # Use PostgreSQL 15 as the database image
+    image: postgres:15  
     container_name: postgres-db
     restart: always
     environment:
-      POSTGRES_DB: django_project        # Name of the database
-      POSTGRES_USER: django_user         # Database user
-      POSTGRES_PASSWORD: django_password # Password for the user
+      POSTGRES_DB: django_project        
+      POSTGRES_USER: django_user         
+      POSTGRES_PASSWORD: django_password 
+      TZ: Europe/Stockholm  
+      POSTGRES_INITDB_ARGS: "--timezone=Europe/Stockholm"
     ports:
       - "5432:5432"
     volumes:
@@ -72,3 +105,4 @@ services:
 
 volumes:
   postgres_data:
+  node_modules:

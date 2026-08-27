@@ -1,0 +1,102 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from 'react-router-dom';
+import { HttpResponse } from "../api/Api";
+import { useSmartState } from "./useSmartState";
+import { setField,setValue } from "./useSmartState";
+
+interface UseApiReturn<T> {
+    data: T | null;
+    loading: boolean;
+    error: string | null;
+    setField: setField<T>;
+    setValue: setValue<T>;
+}
+
+interface CallApiReturn<T> {
+  data: T |null 
+  loading: boolean;
+  error: string  | null;
+  callApi: () => Promise<void>;
+}
+
+
+
+export  function callApi<T> (
+  fetchFunction: () => Promise<{ data: T }>,
+  navigateTo?: string,
+  handleResponse?: (data: T) => void
+  ): CallApiReturn<T>  {
+    const [data, setData] = useState<T | null>(null)
+    const [loading, setLoading] = useState<boolean>(true)
+    const [error, setError] = useState< string | null>(null);
+    const navigate = useNavigate(); 
+  
+    const callApi = async () => {
+      setLoading(true);
+      setError(null);
+  
+      try {
+        const response = await fetchFunction();
+        setData(response.data);
+        if (handleResponse) {
+          handleResponse(response.data);
+        }
+        if (navigateTo) {
+          navigate(navigateTo);
+        }
+      } catch (err ) {
+        const errorRes = err as HttpResponse<T, string>;
+        setError(errorRes.error)
+      } finally {
+        setLoading(false);
+      }
+
+      
+    };
+        
+    
+    return { data, loading, error,callApi };
+}
+
+
+
+
+export function useApi<T> (
+  fetchFunction: () => Promise<{ data: T ,status: number}>,
+  navigateTo?: string,
+  defaultValue : T | null = null,
+  useEffectVaribale : string | number | null = null
+  ): UseApiReturn<T> {
+    const [data, setField, setValue] = useSmartState<T | null>(defaultValue) 
+    const [loading, setLoading] = useState<boolean>(true)
+    const [error, setError] = useState<string>("");
+    const navigate = useNavigate(); 
+    
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const response = await fetchFunction();
+                setValue(response.data);
+                if (navigateTo) {
+                    navigate(navigateTo);
+                }
+              } catch (err ) {
+                if (err instanceof Error) {
+                  setError(err.message);
+                } else if (typeof err === "object" && err !== null && "status" in err) {
+                    const errorWithStatus = err as { status: number };
+                    setError(`Error ${errorWithStatus.status}: `);
+                    if (errorWithStatus.status == 401){
+                      navigate("/login");
+                    }
+                } else {
+                  setError("An unknown error occurred");
+                }
+              } finally {
+                setLoading(false);
+              }
+        };
+        fetchData();
+    }, [useEffectVaribale]) 
+    return { data, loading, error, setField, setValue};
+}

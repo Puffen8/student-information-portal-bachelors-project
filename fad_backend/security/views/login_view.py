@@ -1,0 +1,40 @@
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from ..serializers.username_serializer import UsernameSerializer
+from ..serializers.message_response_serializer import MessageResponseSerializer
+from ..models.two_factor_code import TwoFactorCode
+from ..utils.EmailSender import EmailSender
+from fad_backend.signals import  token_created
+
+
+class LoginView(APIView):
+    @swagger_auto_schema(
+        request_body=UsernameSerializer,
+        responses={
+            200: openapi.Response(
+                description="Success",
+                schema=MessageResponseSerializer,
+                examples={
+                    "application/json": {"message": "The code is sent to the email"}
+                },
+            ),
+            400: openapi.Response(
+                description="Validation Error",
+                examples={
+                    "application/json": {"username": ["This field is required."]}
+                },
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = UsernameSerializer(data=request.data)
+        if serializer.is_valid():
+            username = serializer.validated_data["username"]
+            code = TwoFactorCode.retrieve_code(user_id=username)
+            sender = EmailSender("", "")
+            sender.send_email("@student.liu.se", "T factor code", f"Your code is {code}")
+            return Response({"message": "The code is sent to the email"}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
